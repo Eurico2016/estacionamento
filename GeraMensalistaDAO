@@ -1,0 +1,183 @@
+/*
+  * Eurico N. Souza - 2016
+ */
+package com.ens.estacionamento.dao;
+
+import com.ens.estacionamento.view.FrmPrincipal;
+import static com.ens.estacionamento.view.FrmPrincipal.barraProgressoGeraContas;
+import static com.ens.estacionamento.view.FrmPrincipal.lbPorcentagemProgresso;
+import static com.ens.estacionamento.view.FrmPrincipal.painelBarraDeProgresso;
+import static java.lang.Thread.sleep;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import javax.swing.JOptionPane;
+
+/**
+ *
+ * @author Eurico
+ */
+public class GeraMensalistaDAO {
+    
+    int totalCodConta=0,totalDeMensalista=0,linhaNavega=1;
+    String nomeMensalista,placa,porte,modelo;
+    int idMensalista=0;
+    double vlrConta=0.00;
+    int anoAtual;
+    String mesAtual;
+    
+    Conexao conexao = null;
+    PreparedStatement pst = null;
+    ResultSet rs = null;
+    
+    
+    public void gerarContaPart0(String mes,int ano){
+        mesAtual = mes;
+        anoAtual = ano;
+        conexao = new Conexao();
+        String query= "SELECT COUNT(DISTINCT(idcontareceber)) AS totalCodigo FROM tbcontasreceber WHERE mes='" + mes + "' AND ano=" + ano +" AND status='PENDENTE';";
+        if(conexao.conectar()){
+          try{
+           rs = conexao.executaSQL(query);
+           if(rs.first()){
+               totalCodConta = rs.getInt("totalCodigo");
+           }
+           
+          String query2 = "SELECT COUNT(idmensalista) AS totalMensalista FROM tbmensalista WHERE situacao=true;";
+          rs = conexao.executaSQL(query2);
+          if(rs.first()){
+            totalDeMensalista = rs.getInt("totalMensalista");  
+          }
+          
+          if(totalCodConta == 0 & totalDeMensalista > 0){
+             gerarContaPart1();
+             painelBarraDeProgresso.setVisible(true);      
+          }
+          }catch(SQLException ex){
+              JOptionPane.showMessageDialog(null, "Erro ao gerarContaPart0!\n" + ex, "Atenção", 0); 
+          }  
+        }
+    }
+    
+     public void gerarContaPart1() throws SQLException{
+         if(totalCodConta == 0){
+             totalCodConta = 1;
+         }
+           if(totalCodConta <= totalDeMensalista){
+             gerarContaPart2(); 
+           }else{
+             JOptionPane.showMessageDialog(null, "Operação de geração dos Mensalista do mês "+mesAtual+" realizada com sucesso!");  
+             FrmPrincipal.executaMetodoTabContaReceber();
+             painelBarraDeProgresso.setVisible(false);   
+           }
+     }
+     
+     public void gerarContaPart2(){
+      //  JOptionPane.showMessageDialog(null, "COMEÇA O MÉTODO gerarContaPart2()");   
+        conexao = new Conexao();
+        String query = "SELECT * FROM tbmensalista ORDER BY idmensalista LIMIT "+totalCodConta; 
+        try{
+           if(conexao.conectar()){  
+             rs = conexao.executaSQL(query);
+             if(rs.last()){
+                 idMensalista = rs.getInt("idmensalista");
+                 nomeMensalista = rs.getString("mensalista");
+                 placa = rs.getString("placa");
+                 porte = rs.getString("porte");
+                 modelo = rs.getString("modelo");
+//                  JOptionPane.showMessageDialog(null, "A LINHA A SER GRAVADA É: "+totalCodConta+
+//                          "\n" + "O VALOR DO CÓDIGO MENSALISTA É: "+idMensalista+
+//                          "\n" + "O VALOR DO NOME É: "+nomeMensalista+
+//                          "\n" + "O VALOR DA PLACA É: "+placa+
+//                          "\n" + "O VALOR DO PORTE É: "+porte+
+//                          "\n" + "O VALOR DO MODELO É: "+modelo); 
+               } 
+          }
+        } catch (SQLException ex) {
+            JOptionPane.showMessageDialog(null, "Erro ao gerarContaPart2!\n" + ex, "Atenção", 0);
+        }
+         tempo();      
+    }
+    
+     public void gerarContaPart3(){
+         conexao = new Conexao();
+         String sql = "INSERT INTO tbcontasreceber(codmensalista,mes,ano,valor,status) VALUES(?,?,?,?,?)";
+         try{
+           if(conexao.conectar()){
+             pst = conexao.getConexao().prepareStatement(sql);
+             pst.setInt(1, idMensalista);
+             pst.setString(2, mesAtual);
+             pst.setInt(3, anoAtual);
+             pst.setDouble(4, vlrConta);
+             pst.setString(5, "PENDENTE");
+             if(pst.executeUpdate() == 1){
+               conexao.getConexao().commit();
+               gerarContaPart4();  
+             }
+           }       
+       } catch (SQLException ex) {
+           try{
+               conexao.getConexao().rollback();
+           } catch (SQLException r) {
+             JOptionPane.showMessageDialog(null, "Operação gerarContaPart3 cancelada!"+r, "Atenção", 0);
+           }
+            JOptionPane.showMessageDialog(null, "Erro ao gerarContaPart3!\nSQL :"+sql+"\n"+ ex, "Atenção", 0);
+            //System.out.println("Cód. Mensalista: "+idMensalista);
+        }
+        //conexao.getConexao().setAutoCommit(true);
+       //conexao.desconecta();  
+     //}
+    }
+     
+    public void gerarContaPart4(){
+       int v1;
+       int porcentagem;
+       v1 = linhaNavega * 100;
+       porcentagem = v1 / totalDeMensalista;
+       barraProgressoGeraContas.setValue(porcentagem);
+       lbPorcentagemProgresso.setText(String.valueOf(porcentagem));
+       if(linhaNavega == (totalDeMensalista -1)){
+         barraProgressoGeraContas.setValue(100);
+         lbPorcentagemProgresso.setText("100");
+       }
+       totalCodConta++;
+       linhaNavega++;
+       try{
+         gerarContaPart1();
+       }catch(SQLException e){
+        JOptionPane.showMessageDialog(null, "Erro na Operação gerarContaPart4!\n"+e.getMessage());  
+       } 
+    }
+    
+     public void tempo(){
+      Tempo cronometro = new Tempo(160, 30);
+      cronometro.start();
+    }
+    
+    public class Tempo extends Thread{
+     private int delay;//Tempo em Milesegundos
+     private int tempo;//Tempo do cronometro
+     private int i;
+
+     public Tempo() {
+     }
+   
+     public Tempo(int delay,int tempo){
+      this.delay = delay;
+      this.tempo = tempo;     
+    }
+   
+     @Override
+    public void run(){
+      for(i = tempo; i >= 0; i--){
+        try{
+         sleep(delay);   
+         if(i == 30){         
+             gerarContaPart3();
+             break;  
+         }
+       }catch(InterruptedException e){} 
+     } 
+   }
+  }
+}
